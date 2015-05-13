@@ -13,34 +13,42 @@ module Moonshine
     end
 
     def mariadb_repo
-      package 'python-software-properties',
-        :ensure => :installed
+      if ubuntu_trusty?
+        exec 'add mariadb repo',
+          :command => 'true'
 
-      exec "add mariadb key",
-        :command => "sudo apt-key adv --recv-keys --keyserver hkp://keyserver.ubuntu.com:80 0xcbcb082a1bb943db",
-        :require => package('python-software-properties'),
-        :unless => "sudo apt-key list | grep 'MariaDB Package Signing Key'"
-
-      if ubuntu_precise?
-        repo = "precise"
+        file '/etc/apt/preferences.d/mariadb',
+          :ensure => :absent
       else
-        repo = 'lucid'
+        package 'python-software-properties',
+          :ensure => :installed
+
+        exec "add mariadb key",
+          :command => "sudo apt-key adv --recv-keys --keyserver hkp://keyserver.ubuntu.com:80 0xcbcb082a1bb943db",
+          :require => package('python-software-properties'),
+          :unless => "sudo apt-key list | grep 'MariaDB Package Signing Key'"
+
+        if ubuntu_precise?
+          repo = "precise"
+        else
+          repo = 'lucid'
+        end
+
+        repo_path = "deb http://ftp.osuosl.org/pub/mariadb/repo/5.5/ubuntu #{repo} main"
+
+        file '/etc/apt/preferences.d',
+          :ensure => :directory
+
+        file '/etc/apt/preferences.d/mariadb',
+          :content => template(File.join(File.dirname(__FILE__), '..', '..', 'templates', "mariadb-preferences.erb")),
+          :ensure => :present,
+          :require => [file('/etc/apt/preferences.d')]
+
+        exec "add mariadb repo",
+          :command => "sudo add-apt-repository '#{repo_path}'",
+          :require => exec('add mariadb key'),
+          :unless => "cat /etc/apt/sources.list | grep '#{repo_path}'"
       end
-
-      repo_path = "deb http://ftp.osuosl.org/pub/mariadb/repo/5.5/ubuntu #{repo} main"
-
-      file '/etc/apt/preferences.d',
-        :ensure => :directory
-
-      file '/etc/apt/preferences.d/mariadb',
-        :content => template(File.join(File.dirname(__FILE__), '..', '..', 'templates', "mariadb-preferences.erb")),
-        :ensure => :present,
-        :require => [file('/etc/apt/preferences.d')]
-
-      exec "add mariadb repo",
-        :command => "sudo add-apt-repository '#{repo_path}'",
-        :require => exec('add mariadb key'),
-        :unless => "cat /etc/apt/sources.list | grep '#{repo_path}'"
 
       exec "mariadb apt-get update",
         :command => "sudo apt-get update",
@@ -52,9 +60,11 @@ module Moonshine
         :ensure => :installed,
         :require => [file('/etc/apt/preferences.d/mariadb'), exec('mariadb apt-get update'), exec('add mariadb repo')]
 
-      package 'galera',
-        :ensure => :installed,
-        :require => [exec('mariadb apt-get update'), exec('add mariadb repo')]
+      unless ubuntu_trusty?
+        package 'galera',
+          :ensure => :installed,
+          :require => [exec('mariadb apt-get update'), exec('add mariadb repo')]
+      end
     end
 
     def mariadb_config
